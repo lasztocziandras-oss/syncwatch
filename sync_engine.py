@@ -129,11 +129,16 @@ def get_gcal_service():
     global _gcal_service
     if _gcal_service: return _gcal_service
     try:
-        creds_json = os.environ.get("GOOGLE_CREDENTIALS")
-        if not creds_json:
+        import base64
+        creds_raw = os.environ.get("GOOGLE_CREDENTIALS")
+        if not creds_raw:
             log.error("GOOGLE_CREDENTIALS environment variable not set")
             return None
-        creds_info = json.loads(creds_json)
+        # Support both base64-encoded and raw JSON
+        try:
+            creds_info = json.loads(base64.b64decode(creds_raw).decode())
+        except Exception:
+            creds_info = json.loads(creds_raw)
         creds = service_account.Credentials.from_service_account_info(creds_info, scopes=SCOPES)
         _gcal_service = build("calendar", "v3", credentials=creds)
         log.info("✅ Google Calendar connected")
