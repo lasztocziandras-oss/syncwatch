@@ -1,1 +1,1 @@
-worker: python3 sync_engine.py
+web: python3 sync_engine.py
