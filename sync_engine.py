@@ -150,42 +150,29 @@ def sync_to_google_calendar(cal_id, all_bookings, apt_name):
     svc = get_gcal_service()
     if not svc: return
     try:
-        result = svc.events().list(calendarId=cal_id, singleEvents=True).execute()
-        # Store existing events as {start_end_summary: event_id}
-        existing = {}
-        for e in result.get("items", []):
-            start = e.get("start", {}).get("date", "")
-            end   = e.get("end",   {}).get("date", "")
-            summ  = e.get("summary", "").replace(" [SW]", "").strip()
-            key   = f"{start}_{end}_{summ}"
-            existing[key] = e["id"]
-
-        current_keys = {f"{b['start'].strftime('%Y-%m-%d')}_{b['end'].strftime('%Y-%m-%d')}_{b['summary']}" for b in all_bookings}
         ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
-        # Add new bookings
-        for b in all_bookings:
-            key = f"{b['start'].strftime('%Y-%m-%d')}_{b['end'].strftime('%Y-%m-%d')}_{b['summary']}"
-            if key not in existing:
-                event = {
-                    "summary": f"{b['summary']} [SW]",
-                    "start": {"date": b["start"].strftime("%Y-%m-%d")},
-                    "end":   {"date": b["end"].strftime("%Y-%m-%d")},
-                    "description": f"Last synced: {ts}",
-                }
-                svc.events().insert(calendarId=cal_id, body=event).execute()
-                log.info(f"    📅 Added to Google Cal: {b['start']} → {b['end']}")
-            else:
-                # Touch existing events to force Airbnb cache refresh
-                svc.events().patch(calendarId=cal_id, eventId=existing[key], body={
-                    "description": f"Last synced: {ts}"
-                }).execute()
+        # Delete ALL existing [SW] events first to avoid duplicates
+        page_token = None
+        while True:
+            result = svc.events().list(calendarId=cal_id, singleEvents=True, pageToken=page_token).execute()
+            for e in result.get("items", []):
+                if "[SW]" in e.get("summary", ""):
+                    svc.events().delete(calendarId=cal_id, eventId=e["id"]).execute()
+            page_token = result.get("nextPageToken")
+            if not page_token:
+                break
 
-        # Remove cancelled bookings
-        for key, event_id in existing.items():
-            if key not in current_keys:
-                svc.events().delete(calendarId=cal_id, eventId=event_id).execute()
-                log.info(f"    🗑  Removed from Google Cal: {key}")
+        # Re-add all current bookings fresh
+        for b in all_bookings:
+            event = {
+                "summary": f"{b['summary']} [SW]",
+                "start": {"date": b["start"].strftime("%Y-%m-%d")},
+                "end":   {"date": b["end"].strftime("%Y-%m-%d")},
+                "description": f"Last synced: {ts}",
+            }
+            svc.events().insert(calendarId=cal_id, body=event).execute()
+            log.info(f"    📅 Synced to Google Cal: {b['start']} → {b['end']}")
 
     except Exception as e:
         log.warning(f"  Google Calendar sync failed for {apt_name}: {e}")
