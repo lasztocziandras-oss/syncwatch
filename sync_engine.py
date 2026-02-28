@@ -181,7 +181,7 @@ def sync_to_google_calendar(cal_id, all_bookings, apt_name):
 #  ICAL FETCHING
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-def fetch_ical(url):
+def fetch_ical(url, apt_name=None, platform=None):
     bookings = []
     try:
         resp = requests.get(url, timeout=15, headers={"User-Agent": "SyncWatch/1.0"})
@@ -199,6 +199,8 @@ def fetch_ical(url):
                     bookings.append({"uid": str(component.get("UID", "")), "summary": str(component.get("SUMMARY", "Blocked")), "start": start, "end": end})
     except Exception as e:
         log.warning(f"  Failed: {url[:55]}... → {e}")
+        if apt_name and platform:
+            send_telegram(f"⚠️ iCal URL expired or broken!\n\nApartment: {apt_name}\nPlatform: {platform}\nError: {str(e)[:100]}\n\nPlease get a fresh iCal URL from {platform} and update the script.")
     return bookings
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -270,8 +272,8 @@ def sync_apartment(apt, state):
     name = apt["name"]
     log.info(f"  Checking: {name}")
 
-    ab = fetch_ical(apt["airbnb_ical"])
-    bk = fetch_ical(apt["booking_ical"])
+    ab = fetch_ical(apt["airbnb_ical"], name, "Airbnb")
+    bk = fetch_ical(apt["booking_ical"], name, "Booking.com")
     log.info(f"    Airbnb: {len(ab)} | Booking: {len(bk)}")
 
     save_ical_files(name, ab, bk)
